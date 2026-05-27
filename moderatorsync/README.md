@@ -33,22 +33,26 @@ ModSync embeds collaborative memory directly into Reddit's native interface:
 ## Features
 
 ### Local Context Dossier
+
 - Subreddit-specific action history (not global karma)
 - Maturity Delta: Global account age vs. first local interaction
 - AutoMod catch rate
 - Visual status badges (TRUSTED / WATCHLIST / RISK)
 
 ### Persistent Memory Feed
+
 - Private mod-only notes attached to user profiles
 - Automatic attribution and timestamps
 - Survives shift changes and mod turnover
 
 ### Automated Watchlists
+
 - Time-bound monitoring (12h / 24h / 48h)
 - Alerts when watched users post
 - Auto-expiration
 
 ### Consensus Polling (Coming Soon)
+
 - Democratic voting on grey-area decisions
 - Real-time tallies
 - Audit trail
@@ -57,12 +61,12 @@ ModSync embeds collaborative memory directly into Reddit's native interface:
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|------------|
-| Platform | Reddit Developer Platform (Devvit) |
-| UI | Devvit Blocks API |
-| Storage | Devvit Redis |
-| Language | TypeScript |
+| Component | Technology                         |
+| --------- | ---------------------------------- |
+| Platform  | Reddit Developer Platform (Devvit) |
+| UI        | Devvit Blocks API                  |
+| Storage   | Devvit Redis                       |
+| Language  | TypeScript                         |
 
 ---
 
@@ -89,6 +93,7 @@ modsync/
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - Devvit CLI (`npm install -g devvit`)
 - Reddit account with moderator access to a test subreddit
@@ -127,30 +132,22 @@ devvit publish
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [PRODUCT.md](docs/PRODUCT.md) | Product vision, features, success metrics |
+| Document                                | Description                                        |
+| --------------------------------------- | -------------------------------------------------- |
+| [PRODUCT.md](docs/PRODUCT.md)           | Product vision, features, success metrics          |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical design, data models, component structure |
-| [IDEAS.md](docs/IDEAS.md) | Feature brainstorms and enhancement ideas |
-| [ROADMAP.md](docs/ROADMAP.md) | Development phases and task tracking |
-
----
-
-## Target Hackathon
-
-**Reddit Mod Tools and Migrated Apps Hackathon (2026)**
-- Track: New Mod Tool Category
-- Prize: $10,000 Grand Prize
+| [IDEAS.md](docs/IDEAS.md)               | Feature brainstorms and enhancement ideas          |
+| [ROADMAP.md](docs/ROADMAP.md)           | Development phases and task tracking               |
 
 ---
 
 ## Impact
 
-| Metric | Before ModSync | After ModSync |
-|--------|----------------|---------------|
-| Vetting time per user | 60-90 seconds | 2-3 seconds |
-| Context switches per session | 15+ | 0 |
-| Daily time saved (200 items) | - | 3.5 hours |
+| Metric                       | Before ModSync | After ModSync |
+| ---------------------------- | -------------- | ------------- |
+| Vetting time per user        | 60-90 seconds  | 2-3 seconds   |
+| Context switches per session | 15+            | 0             |
+| Daily time saved (200 items) | -              | 3.5 hours     |
 
 ---
 
@@ -166,4 +163,4 @@ This is a hackathon project. Contributions welcome after the submission deadline
 
 ---
 
-*ModSync: Your mod team never forgets.*
+_ModSync: Your mod team never forgets._
