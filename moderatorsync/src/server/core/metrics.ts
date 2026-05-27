@@ -12,12 +12,8 @@ export interface UserMetrics {
   maturityDelta: string;
   totalActions: number;
   isHighRisk: boolean;
-  riskScore: number;
 }
 
-// Improved risk scoring:
-// - Points for removals, automod catches, short maturity delta, high removal rate, many notes
-// - riskScore >= 3 => isHighRisk
 export function calculateMetrics(
   meta: UserMeta,
   accountCreatedAt: number
@@ -26,35 +22,18 @@ export function calculateMetrics(
   const removalRate = formatPercentage(meta.total_removals, totalActions);
   const maturityDelta = formatMaturityDelta(accountCreatedAt, meta.first_local_interaction);
 
-  let riskScore = 0;
-
-  // Automod catches: 1 point per 5 catches
-  riskScore += Math.floor(meta.automod_catches / 5);
-
-  // Removals: 1 point per 3 removals
-  riskScore += Math.floor(meta.total_removals / 3);
-
-  // High removal rate (>50%) increases score
-  if (totalActions > 0 && meta.total_removals / totalActions > 0.5) {
-    riskScore += 1;
-  }
-
-  // Many notes indicate attention: 1 point per 5 notes
-  riskScore += Math.floor(meta.internal_note_count / 5);
-
-  // Short maturity delta (Day 1 or 'Never' indicates suspicious behavior)
-  if (maturityDelta === 'Day 1' || maturityDelta === 'Never') {
-    riskScore += 1;
-  }
-
-  const isHighRisk = riskScore >= 3 || meta.status_badge === 'RISK' || meta.watchlist_expiration > 0;
+  // High risk if: >50% removal rate AND >5 removals OR >20 AutoMod catches
+  const isHighRisk =
+    meta.total_removals > 5 &&
+    meta.total_removals / totalActions > 0.5 &&
+    totalActions > 0 ||
+    meta.automod_catches > 20;
 
   return {
     removalRate,
     maturityDelta,
     totalActions,
     isHighRisk,
-    riskScore,
   };
 }
 

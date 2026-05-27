@@ -1,105 +1,339 @@
-// Demo bootstrap routes for seeded showcase data
+// Demo Data Seeding Routes
+// Creates realistic sample data for demo/testing purposes
 
 import { Hono } from 'hono';
 import { context, redis } from '@devvit/web/server';
 import { RedisStore } from '../core/redis.js';
+import { getCurrentTimestamp } from '../../utils/formatters.js';
 
-type DemoUserSeed = {
-  userId: string;
-  username: string;
-  status: 'TRUSTED' | 'WATCHLIST' | 'RISK' | 'NEUTRAL';
-  watchlistHours?: number;
-  removals: number;
-  approvals: number;
-  automod: number;
-  notes: Array<{ content: string; noteType: 'info' | 'warning' | 'positive' }>;
-};
+export const demo = new Hono();
 
-const DEMO_MARKER_PREFIX = 'modsync:demo:seeded';
-
-const DEMO_USERS: DemoUserSeed[] = [
+// Demo users with realistic profiles for demo video
+const DEMO_USERS = [
   {
-    userId: 'demo_user_alpha',
-    username: 'alpha_trader',
-    status: 'WATCHLIST',
-    watchlistHours: 24,
-    removals: 4,
-    approvals: 1,
-    automod: 2,
+    id: 't2_demo_spammer',
+    username: 'SpammyMcSpamface',
+    profile: 'High Risk - Serial Spammer',
+    removals: 15,
+    approvals: 2,
+    automod: 8,
+    status: 'RISK' as const,
+    firstInteractionDaysAgo: 14,
     notes: [
-      { content: 'Repeated low-effort promotional replies.', noteType: 'warning' },
-      { content: 'Watch for identical phrasing across threads.', noteType: 'info' },
+      { mod: 'ModSarah', content: 'First warning for self-promotion - posting affiliate links', type: 'warning' as const, daysAgo: 7 },
+      { mod: 'ModJames', content: 'Second warning - still posting affiliate links disguised as recommendations', type: 'warning' as const, daysAgo: 3 },
+      { mod: 'ModAlex', content: 'Temp banned for 3 days. Watch closely on return.', type: 'warning' as const, daysAgo: 1 },
     ],
   },
   {
-    userId: 'demo_user_bravo',
-    username: 'bravo_helper',
-    status: 'TRUSTED',
+    id: 't2_demo_trusted',
+    username: 'HelpfulContributor',
+    profile: 'Trusted - Community Hero',
     removals: 0,
-    approvals: 6,
-    automod: 0,
-    notes: [{ content: 'Consistently helpful and responsive.', noteType: 'positive' }],
+    approvals: 47,
+    automod: 1,
+    status: 'TRUSTED' as const,
+    firstInteractionDaysAgo: 180,
+    notes: [
+      { mod: 'ModSarah', content: 'Excellent community member! Always helpful in comments, answers newbie questions patiently.', type: 'positive' as const, daysAgo: 30 },
+      { mod: 'ModJames', content: 'Nominated for community helper flair - approved!', type: 'positive' as const, daysAgo: 14 },
+    ],
   },
   {
-    userId: 'demo_user_charlie',
-    username: 'charlie_spam',
-    status: 'RISK',
-    removals: 11,
-    approvals: 0,
-    automod: 5,
+    id: 't2_demo_watchlist',
+    username: 'SuspiciousNewbie',
+    profile: 'Watchlist - Possible Ban Evader',
+    removals: 5,
+    approvals: 3,
+    automod: 4,
+    status: 'WATCHLIST' as const,
+    watchlistHours: 24,
+    firstInteractionDaysAgo: 3,
     notes: [
-      { content: 'Likely coordinated spam pattern.', noteType: 'warning' },
-      { content: 'Escalate if activity resumes after cooldown.', noteType: 'warning' },
+      { mod: 'ModAlex', content: 'New account posting similar content to banned user u/OldSpammer99 - same writing style and topics', type: 'warning' as const, daysAgo: 2 },
+      { mod: 'ModSarah', content: 'Added to 24h watchlist - monitoring for ban evasion pattern', type: 'info' as const, daysAgo: 0 },
+    ],
+  },
+  {
+    id: 't2_demo_neutral',
+    username: 'RegularUser123',
+    profile: 'Neutral - Typical User',
+    removals: 2,
+    approvals: 18,
+    automod: 0,
+    status: 'NEUTRAL' as const,
+    firstInteractionDaysAgo: 90,
+    notes: [
+      { mod: 'ModJames', content: 'Accidental rule 3 violation - wrong flair. User was polite, corrected immediately.', type: 'info' as const, daysAgo: 45 },
+    ],
+  },
+  {
+    id: 't2_demo_emerging',
+    username: 'AggressivePoster',
+    profile: 'Emerging Risk - Getting Worse',
+    removals: 8,
+    approvals: 1,
+    automod: 12,
+    status: 'NEUTRAL' as const,
+    firstInteractionDaysAgo: 21,
+    notes: [
+      { mod: 'ModSarah', content: 'Multiple hostile comments removed. Warned about civility rules.', type: 'warning' as const, daysAgo: 5 },
+      { mod: 'ModAlex', content: 'Arguing with other users again. Borderline harassment in DMs reported.', type: 'warning' as const, daysAgo: 2 },
+      { mod: 'ModJames', content: 'Consider adding to watchlist if behavior continues', type: 'info' as const, daysAgo: 1 },
     ],
   },
 ];
 
-export const demo = new Hono();
-
-demo.get('/bootstrap', async (c) => {
+/**
+ * GET /api/demo/seed
+ * Seeds demo data for testing and demo purposes
+ */
+demo.get('/seed', async (c) => {
   try {
-    const subId = context.subredditId || c.req.query('subId') || '';
-    if (!subId) {
-      return c.json({ type: 'error', message: 'Missing subreddit context', error: true }, 400);
-    }
+    const subredditId = context.subredditId || '';
+    const subredditName = context.subredditName || '';
 
-    const markerKey = `${DEMO_MARKER_PREFIX}:${subId}`;
-    const existing = await redis.get(markerKey);
-    if (existing === '1') {
-      return c.json({ type: 'demo_bootstrap', subredditId: subId, seeded: false, users: DEMO_USERS.length });
+    if (!subredditId) {
+      return c.json({ error: 'No subreddit context' }, 400);
     }
 
     const store = new RedisStore(redis);
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
+    const seededUsers: string[] = [];
 
-    for (const seed of DEMO_USERS) {
-      await store.updateUserMeta(subId, seed.userId, {
-        status_badge: seed.status,
-        watchlist_expiration: seed.status === 'WATCHLIST' ? now + (seed.watchlistHours || 24) * 3600 : 0,
-        total_removals: seed.removals,
-        total_approvals: seed.approvals,
-        automod_catches: seed.automod,
-        first_local_interaction: now - 86400,
+    for (const user of DEMO_USERS) {
+      // Calculate first interaction timestamp
+      const firstInteraction = now - user.firstInteractionDaysAgo * 24 * 3600;
+
+      // Set user meta
+      await store.updateUserMeta(subredditId, user.id, {
+        status_badge: user.status,
+        total_removals: user.removals,
+        total_approvals: user.approvals,
+        automod_catches: user.automod,
+        first_local_interaction: Math.floor(firstInteraction),
+        internal_note_count: user.notes.length,
+        watchlist_expiration: user.watchlistHours
+          ? now + user.watchlistHours * 3600
+          : 0,
       });
 
-      if (seed.status === 'WATCHLIST') {
-        await store.addToWatchlist(subId, seed.userId, seed.watchlistHours || 24);
-      } else if (seed.status === 'TRUSTED') {
-        await store.setUserStatus(subId, seed.userId, 'TRUSTED');
-      } else if (seed.status === 'RISK') {
-        await store.setUserStatus(subId, seed.userId, 'RISK');
+      // Add to watchlist if applicable
+      if (user.watchlistHours) {
+        await store.addToWatchlist(subredditId, user.id, user.watchlistHours);
       }
 
-      for (const note of seed.notes) {
-        await store.addNote(subId, seed.userId, 'ModSync Demo', 't2_demo_mod', note.content, note.noteType);
+      // Add notes (in reverse order so newest appears first)
+      for (const note of [...user.notes].reverse()) {
+        await store.addNote(
+          subredditId,
+          user.id,
+          note.mod,
+          `t2_mod_${note.mod.toLowerCase().replace('mod', '')}`,
+          note.content,
+          note.type
+        );
       }
+
+      seededUsers.push(user.username);
+      console.log(`Seeded demo user: ${user.username}`);
     }
 
-    await redis.set(markerKey, '1');
+    // Store demo user mapping for easy lookup
+    const mapping: Record<string, string> = {};
+    for (const u of DEMO_USERS) {
+      mapping[u.username.toLowerCase()] = u.id;
+    }
+    await redis.hSet(`modsync:demo:${subredditId}`, mapping);
 
-    return c.json({ type: 'demo_bootstrap', subredditId: subId, seeded: true, users: DEMO_USERS.length });
+    // Mark as seeded
+    await redis.set(`modsync:demo:seeded:${subredditId}`, '1');
+
+    return c.json({
+      success: true,
+      message: `Seeded ${seededUsers.length} demo users`,
+      subredditId,
+      subredditName,
+      users: DEMO_USERS.map(u => ({
+        username: u.username,
+        id: u.id,
+        profile: u.profile,
+        status: u.status,
+        removals: u.removals,
+        approvals: u.approvals,
+      })),
+    });
   } catch (error) {
-    console.error('Demo bootstrap error:', error);
-    return c.json({ type: 'error', message: 'Failed to bootstrap demo data', error: true }, 500);
+    console.error('Error seeding demo data:', error);
+    return c.json({ error: 'Failed to seed demo data', details: String(error) }, 500);
   }
+});
+
+/**
+ * GET /api/demo/users
+ * Lists available demo users and their current state
+ */
+demo.get('/users', async (c) => {
+  try {
+    const subredditId = context.subredditId || '';
+    const store = new RedisStore(redis);
+
+    const users = await Promise.all(
+      DEMO_USERS.map(async (u) => {
+        const meta = await store.getUserMeta(subredditId, u.id);
+        const notes = await store.getRecentNotes(subredditId, u.id, 5);
+        return {
+          id: u.id,
+          username: u.username,
+          profile: u.profile,
+          expectedStatus: u.status,
+          currentStatus: meta.status_badge,
+          removals: meta.total_removals,
+          approvals: meta.total_approvals,
+          automod: meta.automod_catches,
+          noteCount: notes.length,
+          isSeeded: meta.total_removals > 0 || meta.total_approvals > 0,
+        };
+      })
+    );
+
+    return c.json({
+      subredditId,
+      users,
+    });
+  } catch (error) {
+    console.error('Error listing demo users:', error);
+    return c.json({ error: 'Failed to list demo users' }, 500);
+  }
+});
+
+/**
+ * GET /api/demo/dossier/:username
+ * Quick access to a demo user's dossier
+ */
+demo.get('/dossier/:username', async (c) => {
+  try {
+    const username = c.req.param('username');
+    const subredditId = context.subredditId || '';
+
+    const demoUser = DEMO_USERS.find(u =>
+      u.username.toLowerCase() === username.toLowerCase()
+    );
+
+    if (!demoUser) {
+      return c.json({
+        error: 'Demo user not found',
+        availableUsers: DEMO_USERS.map(u => u.username),
+      }, 404);
+    }
+
+    const store = new RedisStore(redis);
+    const meta = await store.getUserMeta(subredditId, demoUser.id);
+    const notes = await store.getRecentNotes(subredditId, demoUser.id, 10);
+
+    return c.json({
+      userId: demoUser.id,
+      username: demoUser.username,
+      profile: demoUser.profile,
+      subredditId,
+      subredditName: context.subredditName || '',
+      meta,
+      notes,
+      accountCreatedAt: getCurrentTimestamp() - 365 * 24 * 3600, // 1 year ago
+    });
+  } catch (error) {
+    console.error('Error fetching demo dossier:', error);
+    return c.json({ error: 'Failed to fetch demo dossier' }, 500);
+  }
+});
+
+/**
+ * DELETE /api/demo/clear
+ * Clears all demo data
+ */
+demo.delete('/clear', async (c) => {
+  try {
+    const subredditId = context.subredditId || '';
+
+    if (!subredditId) {
+      return c.json({ error: 'No subreddit context' }, 400);
+    }
+
+    // Delete demo user data
+    for (const user of DEMO_USERS) {
+      const metaKey = `modsync:sub:${subredditId}:user:${user.id}:meta`;
+      const notesKey = `modsync:sub:${subredditId}:user:${user.id}:notes`;
+      const notesOrderKey = `${notesKey}:order`;
+
+      await redis.del(metaKey);
+      await redis.del(notesKey);
+      await redis.del(notesOrderKey);
+    }
+
+    // Delete demo markers
+    await redis.del(`modsync:demo:${subredditId}`);
+    await redis.del(`modsync:demo:seeded:${subredditId}`);
+
+    return c.json({
+      success: true,
+      message: 'Demo data cleared',
+    });
+  } catch (error) {
+    console.error('Error clearing demo data:', error);
+    return c.json({ error: 'Failed to clear demo data' }, 500);
+  }
+});
+
+/**
+ * POST /api/demo/set-pending/:username
+ * Sets a demo user as the pending dossier (for testing the dossier view)
+ */
+demo.post('/set-pending/:username', async (c) => {
+  try {
+    const username = c.req.param('username');
+    const subredditId = context.subredditId || '';
+    const subredditName = context.subredditName || '';
+
+    const demoUser = DEMO_USERS.find(u =>
+      u.username.toLowerCase() === username.toLowerCase()
+    );
+
+    if (!demoUser) {
+      return c.json({
+        error: 'Demo user not found',
+        availableUsers: DEMO_USERS.map(u => u.username),
+      }, 404);
+    }
+
+    // Set as pending dossier
+    const dossierKey = `modsync:dossier:pending:${subredditId}`;
+    await redis.hSet(dossierKey, {
+      userId: demoUser.id,
+      username: demoUser.username,
+      subredditId: subredditId,
+      subredditName: subredditName,
+      timestamp: Date.now().toString(),
+    });
+    await redis.expire(dossierKey, 300);
+
+    return c.json({
+      success: true,
+      message: `Set ${demoUser.username} as pending dossier`,
+      user: {
+        id: demoUser.id,
+        username: demoUser.username,
+        profile: demoUser.profile,
+      },
+      instructions: 'Now navigate to the ModSync post to see this dossier',
+    });
+  } catch (error) {
+    console.error('Error setting pending dossier:', error);
+    return c.json({ error: 'Failed to set pending dossier' }, 500);
+  }
+});
+
+// Legacy bootstrap endpoint for compatibility
+demo.get('/bootstrap', async (c) => {
+  // Redirect to seed
+  return c.redirect('/api/demo/seed');
 });

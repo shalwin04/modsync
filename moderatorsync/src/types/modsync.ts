@@ -49,39 +49,6 @@ export interface DossierContext {
   currentModUsername: string;
 }
 
-// Poll Types
-
-export interface PollOption {
-  id: string;
-  label: string;
-  votes: string[]; // Array of mod usernames who voted
-  voteCount?: number;
-}
-
-export interface PollEntry {
-  poll_id: string;
-  created_by: string; // Mod username
-  created_at: number; // Unix timestamp
-  question: string;
-  context_post_id?: string; // Optional link to post/comment
-  expires_at: number; // Unix timestamp
-  status: 'active' | 'closed';
-  options: PollOption[];
-}
-
-export interface PollResults {
-  poll_id: string;
-  question: string;
-  options: Array<{
-    label: string;
-    votes: number;
-    percentage: number;
-  }>;
-  totalVotes: number;
-  status: 'active' | 'closed';
-  timeRemaining?: number;
-}
-
 // Default values
 export const DEFAULT_USER_META: UserMeta = {
   status_badge: 'NEUTRAL',

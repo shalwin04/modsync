@@ -66,6 +66,8 @@ export class RedisStore {
   }
 
   // ========== Notes Operations ==========
+  // Notes stored in hash: noteId -> JSON(note)
+  // Simple approach: store all notes in hash, sort by timestamp in code
 
   async addNote(
     subId: string,
@@ -77,7 +79,7 @@ export class RedisStore {
   ): Promise<void> {
     const noteId = generateId();
     const timestamp = getCurrentTimestamp();
-    const key = userNotesKey(subId, userId);
+    const notesHashKey = userNotesKey(subId, userId);
 
     const noteEntry: NoteEntry = {
       note_id: noteId,
@@ -88,14 +90,18 @@ export class RedisStore {
       note_type: noteType,
     };
 
-    // Store as JSON string in Redis list
-    await this.redis.lPush(key, JSON.stringify(noteEntry));
+    console.log(`Adding note to ${notesHashKey}:`, noteEntry);
+
+    // Store note in hash (noteId -> JSON)
+    await this.redis.hSet(notesHashKey, { [noteId]: JSON.stringify(noteEntry) });
 
     // Update note count in meta
     const meta = await this.getUserMeta(subId, userId);
     await this.updateUserMeta(subId, userId, {
       internal_note_count: meta.internal_note_count + 1,
     });
+
+    console.log(`Note added successfully for user ${userId}`);
   }
 
   async getRecentNotes(
@@ -103,60 +109,55 @@ export class RedisStore {
     userId: string,
     limit: number = 10
   ): Promise<NoteEntry[]> {
-    const key = userNotesKey(subId, userId);
-    const rawNotes = await this.redis.lRange(key, 0, limit - 1);
+    const notesHashKey = userNotesKey(subId, userId);
 
-    if (!rawNotes || rawNotes.length === 0) {
+    try {
+      console.log(`Fetching notes from: ${notesHashKey}`);
+
+      // Fetch all notes from hash
+      const notesData = await this.redis.hGetAll(notesHashKey);
+
+      console.log(`Notes data retrieved:`, notesData ? Object.keys(notesData).length : 0, 'notes');
+
+      if (!notesData || Object.keys(notesData).length === 0) {
+        return [];
+      }
+
+      // Parse all notes
+      const notes: NoteEntry[] = [];
+      for (const [noteId, rawNote] of Object.entries(notesData)) {
+        try {
+          const note = JSON.parse(rawNote) as NoteEntry;
+          notes.push(note);
+        } catch (e) {
+          console.error(`Failed to parse note ${noteId}:`, e);
+        }
+      }
+
+      // Sort by timestamp descending (newest first)
+      notes.sort((a, b) => b.timestamp - a.timestamp);
+
+      // Return limited results
+      return notes.slice(0, limit);
+    } catch (error) {
+      console.error('Error fetching notes:', error);
       return [];
     }
-
-    return rawNotes
-      .map((raw) => {
-        try {
-          return JSON.parse(raw) as NoteEntry;
-        } catch {
-          return null;
-        }
-      })
-      .filter((note): note is NoteEntry => note !== null);
   }
 
-  /**
-   * Delete a note by its note_id
-   */
-  async deleteNote(subId: string, userId: string, noteId: string): Promise<boolean> {
-    const key = userNotesKey(subId, userId);
+  async deleteNote(subId: string, userId: string, noteId: string): Promise<void> {
+    const notesHashKey = userNotesKey(subId, userId);
 
-    // Get full list (0..-1)
-    const rawNotes = await this.redis.lRange(key, 0, -1);
-    if (!rawNotes || rawNotes.length === 0) return false;
+    // Remove from hash
+    await this.redis.hDel(notesHashKey, [noteId]);
 
-    // Filter out the note
-    const notes = rawNotes
-      .map((raw) => {
-        try {
-          return JSON.parse(raw) as NoteEntry;
-        } catch {
-          return null;
-        }
-      })
-      .filter((n): n is NoteEntry => n !== null && n.note_id !== noteId);
-
-    // Replace the list: delete key and push remaining notes (preserve newest-first order)
-    await this.redis.del(key);
-    if (notes.length > 0) {
-      // push in reverse order so that newest is at head (lPush)
-      const toPush = notes.slice().reverse().map((n) => JSON.stringify(n));
-      // lPush accepts multiple values
-      await this.redis.lPush(key, ...toPush);
+    // Update note count
+    const meta = await this.getUserMeta(subId, userId);
+    if (meta.internal_note_count > 0) {
+      await this.updateUserMeta(subId, userId, {
+        internal_note_count: meta.internal_note_count - 1,
+      });
     }
-
-    // Update note count in meta
-    await this.updateUserMeta(subId, userId, {
-      internal_note_count: notes.length,
-    });
-
-    return true;
   }
 
   // ========== Watchlist Operations ==========
@@ -186,20 +187,22 @@ export class RedisStore {
     });
 
     const key = watchlistKey(subId);
-    await this.redis.zRem(key, userId);
+    await this.redis.zRem(key, [userId]);
   }
 
   async getWatchlistExpiring(subId: string): Promise<string[]> {
     const now = getCurrentTimestamp();
     const key = watchlistKey(subId);
 
-    // Get all users with expiration time <= now
-    const expiredUsers = await this.redis.zRangeByScore(key, {
-      min: '-inf',
-      max: now.toString(),
-    });
-
-    return expiredUsers || [];
+    try {
+      const expiredUsers = await this.redis.zRange(key, '-inf', now.toString(), {
+        by: 'score',
+      });
+      return expiredUsers || [];
+    } catch (error) {
+      console.error('Error getting expiring watchlist:', error);
+      return [];
+    }
   }
 
   // ========== Activity Tracking ==========

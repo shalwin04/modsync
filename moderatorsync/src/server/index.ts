@@ -7,9 +7,9 @@ import { menu } from './routes/menu';
 import { triggers } from './routes/triggers';
 import { dossier } from './routes/dossier';
 import { dossierMenu } from './routes/dossier-menu';
+import { alerts } from './routes/alerts';
 import { dashboard } from './routes/dashboard';
 import { demo } from './routes/demo';
-import { alerts } from './routes/alerts';
 
 const app = new Hono();
 const internal = new Hono();

@@ -8,9 +8,6 @@
         "inline": true,
         "entry": "splash.html"
       },
-      "dashboard": {
-        "entry": "dashboard.html"
-      },
       "game": {
         "entry": "game.html"
       },
@@ -26,20 +23,6 @@
   "menu": {
     "items": [
       {
-        "label": "Create a new post",
-        "description": "moderatorsync",
-        "location": "subreddit",
-        "forUserType": "moderator",
-        "endpoint": "/internal/menu/post-create"
-      },
-      {
-        "label": "Example form",
-        "description": "Show a simple form",
-        "location": "subreddit",
-        "forUserType": "moderator",
-        "endpoint": "/internal/menu/example-form"
-      },
-      {
         "label": "ModSync Dossier",
         "description": "View user context and team notes",
         "location": [
@@ -48,21 +31,41 @@
         ],
         "forUserType": "moderator",
         "endpoint": "/internal/menu/dossier-open"
-      }
-      ,
-      {
-        "label": "ModSync Dashboard",
-        "description": "Open ModSync admin dashboard",
-        "location": "subreddit",
-        "forUserType": "moderator",
-        "endpoint": "/internal/menu/dashboard-open"
       },
       {
-        "label": "ModSync Demo",
-        "description": "Open seeded demo mode",
+        "label": "Create ModSync Post",
+        "description": "Create the ModSync dashboard post",
         "location": "subreddit",
         "forUserType": "moderator",
-        "endpoint": "/internal/menu/demo-open"
+        "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Seed Demo Data",
+        "description": "Load sample users for testing",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/demo-seed"
+      },
+      {
+        "label": "View Demo: Spammer",
+        "description": "View SpammyMcSpamface dossier",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/demo-view-spammer"
+      },
+      {
+        "label": "View Demo: Trusted",
+        "description": "View HelpfulContributor dossier",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/demo-view-trusted"
+      },
+      {
+        "label": "View Demo: Watchlist",
+        "description": "View SuspiciousNewbie dossier",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/demo-view-watchlist"
       }
     ]
   },

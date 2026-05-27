@@ -5,10 +5,44 @@ import { Hono } from 'hono';
 import { context, reddit, redis } from '@devvit/web/server';
 import type { NoteType } from '../../types/modsync.js';
 import { RedisStore } from '../core/redis.js';
-import { getUserInfo, isUserModerator } from '../core/reddit.js';
+import { getUserInfo } from '../core/reddit.js';
 import { calculateMetrics } from '../core/metrics.js';
+import { getCurrentTimestamp } from '../../utils/formatters.js';
 
 export const dossier = new Hono();
+
+/**
+ * GET /api/dossier/pending/:subId
+ * Get the pending dossier context (stored when menu is clicked)
+ */
+dossier.get('/pending/:subId', async (c) => {
+  try {
+    const subId = c.req.param('subId');
+    if (!subId) {
+      return c.json({ error: 'Missing subId' }, 400);
+    }
+
+    const dossierKey = `modsync:dossier:pending:${subId}`;
+    const data = await redis.hGetAll(dossierKey);
+
+    if (!data || !data.userId) {
+      return c.json({ error: 'No pending dossier' }, 404);
+    }
+
+    // Clear the pending context after reading (one-time use)
+    await redis.del(dossierKey);
+
+    return c.json({
+      userId: data.userId,
+      username: data.username,
+      subredditId: data.subredditId,
+      subredditName: data.subredditName,
+    });
+  } catch (error) {
+    console.error('Error fetching pending dossier:', error);
+    return c.json({ error: 'Failed to fetch pending dossier' }, 500);
+  }
+});
 
 interface DossierDataResponse {
   type: 'dossier_data';
@@ -98,11 +132,11 @@ dossier.post('/:subId/:userId/note', async (c) => {
     const body = await c.req.json<{
       content: string;
       noteType?: NoteType;
-        modUsername?: string;
-        modId?: string;
+      modUsername: string;
+      modId: string;
     }>();
 
-      if (!subId || !userId || !body.content) {
+    if (!subId || !userId || !body.content || !body.modUsername) {
       return c.json<ErrorResponse>(
         {
           type: 'error',
@@ -113,34 +147,15 @@ dossier.post('/:subId/:userId/note', async (c) => {
       );
     }
 
-      // Ensure caller is a moderator for this subreddit
-      const subredditName = context.subredditName || c.req.header('x-subreddit-name') || '';
-      const isMod = await isUserModerator(reddit, subredditName);
-      if (!isMod) {
-        return c.json({ type: 'error', message: 'Not authorized', error: true }, { status: 403 });
-      }
-
-      // Prefer server-side current user identity via Devvit Reddit client
-      let modUsername = body.modUsername || 'unknown';
-      let modId = body.modId || 'unknown';
-      try {
-        const me = await reddit.getCurrentUser();
-        if (me) {
-          modUsername = me.username || modUsername;
-          modId = me.id || modId;
-        }
-      } catch (err) {
-        console.warn('Could not determine current moderator identity from Reddit client', err);
-      }
-
-      // Basic input validation
-      const contentTrimmed = String(body.content || '').trim();
-      if (!contentTrimmed || contentTrimmed.length > 2000) {
-        return c.json({ type: 'error', message: 'Invalid content', error: true }, { status: 400 });
-      }
-
-      const store = new RedisStore(redis);
-      await store.addNote(subId, userId, modUsername, modId, contentTrimmed, body.noteType || 'info');
+    const store = new RedisStore(redis);
+    await store.addNote(
+      subId,
+      userId,
+      body.modUsername,
+      body.modId,
+      body.content,
+      body.noteType || 'info'
+    );
 
     const notes = await store.getRecentNotes(subId, userId, 10);
 
@@ -159,36 +174,6 @@ dossier.post('/:subId/:userId/note', async (c) => {
       },
       { status: 500 }
     );
-  }
-});
-
-/**
- * DELETE /api/dossier/:subId/:userId/note/:noteId
- * Delete a note by ID
- */
-dossier.delete('/:subId/:userId/note/:noteId', async (c) => {
-  try {
-    const subId = c.req.param('subId');
-    const userId = c.req.param('userId');
-    const noteId = c.req.param('noteId');
-
-    if (!subId || !userId || !noteId) {
-      return c.json({ type: 'error', message: 'Missing required params', error: true }, { status: 400 });
-    }
-
-    const store = new RedisStore(redis);
-    const deleted = await store.deleteNote(subId, userId, noteId);
-
-    if (!deleted) {
-      return c.json({ type: 'error', message: 'Note not found', error: true }, { status: 404 });
-    }
-
-    const notes = await store.getRecentNotes(subId, userId, 10);
-
-    return c.json({ type: 'success', message: 'Note deleted', notes });
-  } catch (error) {
-    console.error('Error deleting note:', error);
-    return c.json({ type: 'error', message: 'Failed to delete note', error: true }, { status: 500 });
   }
 });
 
@@ -280,132 +265,6 @@ dossier.post('/:subId/:userId/watchlist', async (c) => {
       {
         type: 'error',
         message: 'Failed to update watchlist',
-        error: true,
-      },
-      { status: 500 }
-    );
-  }
-});
-
-/**
- * POST /api/dossier/:subId/:userId/action/removal
- * Record that a removal action was taken on this user
- */
-dossier.post('/:subId/:userId/action/removal', async (c) => {
-  try {
-    const subId = c.req.param('subId');
-    const userId = c.req.param('userId');
-
-    if (!subId || !userId) {
-      return c.json<ErrorResponse>(
-        {
-          type: 'error',
-          message: 'Missing required fields',
-          error: true,
-        },
-        { status: 400 }
-      );
-    }
-
-    const store = new RedisStore(redis);
-    await store.recordRemoval(subId, userId);
-    const meta = await store.getUserMeta(subId, userId);
-
-    return c.json({
-      type: 'success',
-      message: 'Removal recorded',
-      meta,
-    });
-  } catch (error) {
-    console.error('Error recording removal:', error);
-    return c.json<ErrorResponse>(
-      {
-        type: 'error',
-        message: 'Failed to record removal',
-        error: true,
-      },
-      { status: 500 }
-    );
-  }
-});
-
-/**
- * POST /api/dossier/:subId/:userId/action/approval
- * Record that an approval action was taken on this user
- */
-dossier.post('/:subId/:userId/action/approval', async (c) => {
-  try {
-    const subId = c.req.param('subId');
-    const userId = c.req.param('userId');
-
-    if (!subId || !userId) {
-      return c.json<ErrorResponse>(
-        {
-          type: 'error',
-          message: 'Missing required fields',
-          error: true,
-        },
-        { status: 400 }
-      );
-    }
-
-    const store = new RedisStore(redis);
-    await store.recordApproval(subId, userId);
-    const meta = await store.getUserMeta(subId, userId);
-
-    return c.json({
-      type: 'success',
-      message: 'Approval recorded',
-      meta,
-    });
-  } catch (error) {
-    console.error('Error recording approval:', error);
-    return c.json<ErrorResponse>(
-      {
-        type: 'error',
-        message: 'Failed to record approval',
-        error: true,
-      },
-      { status: 500 }
-    );
-  }
-});
-
-/**
- * POST /api/dossier/:subId/:userId/action/automod
- * Record that an AutoMod catch occurred for this user
- */
-dossier.post('/:subId/:userId/action/automod', async (c) => {
-  try {
-    const subId = c.req.param('subId');
-    const userId = c.req.param('userId');
-
-    if (!subId || !userId) {
-      return c.json<ErrorResponse>(
-        {
-          type: 'error',
-          message: 'Missing required fields',
-          error: true,
-        },
-        { status: 400 }
-      );
-    }
-
-    const store = new RedisStore(redis);
-    await store.recordAutomodCatch(subId, userId);
-    const meta = await store.getUserMeta(subId, userId);
-
-    return c.json({
-      type: 'success',
-      message: 'AutoMod catch recorded',
-      meta,
-    });
-  } catch (error) {
-    console.error('Error recording automod catch:', error);
-    return c.json<ErrorResponse>(
-      {
-        type: 'error',
-        message: 'Failed to record automod catch',
         error: true,
       },
       { status: 500 }
